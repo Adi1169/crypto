@@ -112,131 +112,146 @@ const uint8_t *fromhex(const char *str) {
   }
   return buf;
 }
-	
-void unsigned_txn_to_byte_array(unsigned_txn utx,int ind,uint8_t *ubyte){
-	int index=0;
-	memcpy(&ubyte[index],utx.network_version,4);
-	index+=4;
-	memcpy(&ubyte[index],utx.input_count,1);
-	index+=1;
-	for(int i=0;i<(int)utx.input_count[0];++i){
-		memcpy(&ubyte[index],utx.input[i].previous_txn_hash,32);
-		index+=32;
-		memcpy(&ubyte[index],utx.input[i].previous_output_index,4);
-		index+=4;
-		if(i==ind){
-			memcpy(&ubyte[index],utx.input[i].script_length,1);
-			index+=1;
-			memcpy(&ubyte[index],utx.input[i].script_public_key,25);
-			index+=25;
-		}else{
-			
-			ubyte[index]=0x00;
-			index+=1;
-			
+int check(uint8_t * txn,int32_t index){
+	int size=(int)txn[index];
+	bignum256 bg;
+	if(size<=(int)0x7f && size>=(int)0x00){
+		return 0;
 		}
-		memcpy(&ubyte[index],utx.input[i].sequence,4);
-		index+=4;
+	else if(size<=0xb7 && size>=0x80){
+		return ((int)txn[index]-0x80);
 	}
-	memcpy(&ubyte[index],utx.output_count,1);
-	index+=1;
+	else if(size<=0xbf && size>=0xb8){
+		uint8_t a[(int)size-0xb8];
+		index++;
+		memcpy(&a,txn[index],(int)size-0xb8);
+		int32_t temp=read_le(&a);
+		return temp+(int)size-0xb8;
+		
+	}
+	else if(size<=0xf7 && size>=0xc0){
+		return ((int)txn[index]-0xc0);
+		}
+	else if(size<=0xff && size>=0xf8){
+		uint8_t a[(int)size-0xf8];
+		index++;
+		memcpy(&a,txn[index],(int)size-0xf8);
+		int32_t temp=read_le(&a);
+		return temp+(int)size-0xf8;
+	}
+}
+		
+void eth_code(uint8_t *txn){
 	
-	for(int i=0;i<(int)utx.output_count[0];++i){
-		memcpy(&ubyte[index],utx.output[i].value,8);
-		index+=8;
-		memcpy(&ubyte[index],utx.output[i].script_length,1);
-		index+=1;
-		memcpy(&ubyte[index],utx.output[i].script_public_key,25);
-		index+=25;
+	uint64_t val;
+	
+	int index=0;
+
+	int x;
+	
+	
+	int size=(int)txn[index];
+	
+	if(size<=0x7f && size>=0x00){
+		index+=0;
 	}
-	memcpy(&ubyte[index],utx.locktime,4);
-	index+=4;
-	memcpy(&ubyte[index],utx.sighash,4);
-	index+=4;
+	else if(size<=0xb7 && size>=0x80){
+		index+=0;
+	}
+	else if(size<=0xbf && size>=0xb8){
+		index+= (int)size-0xb7;
+		
+	}
+	else if(size<=0xf7 && size>=0xc0){
+		index+= 0;
+	}
+	else if(size<=0xff && size>=0xf8){
+		index+= (int)size-0xf7;
+	}
+	index++;
+
+	//nonce:
+	x=check(txn,index);
+	index+=(x+1);
+	
+	//gas price:
+	x=check(txn,index);
+	index+=(x+1);
+	
+	//gas limit:
+	x=check(txn,index);
+	index+=(x+1);
+	
+	//recepient
+	x=check(txn,index);
+	uint8_t address[x-1],token[x-1];
+	printf("\n\n adress: \n\n");
+	memcpy(&address,&txn[index+1],x-1);
+	memcpy(&token,&txn[index+1],x-1);
+	for(int i=0;i<x-1;++i){
+		printf("%02x",address[i]);
+	}
+	index+=x+1;
+	
+	//value
+	x=check(txn,index); 
+	uint8_t a[4]={' '};
+	
+	index++;
+	for(int i=4-x;i<4;i++){
+		a[i]=txn[index++];
+	}
+	for(int i=0;i<4-x;i++){
+		a[i]=(uint8_t)0;
+	}
+
+	uint64_t value=read_be(a);
+	index+=x+1;
+
+	if(value==0){
+		index+=8;
+		int ans=index;
+		printf("\n\nreceipent adress:\n\n");
+		while(txn[ans]==(uint8_t)0 && ans<index+32)++ans;
+		memcpy(&address,&txn[ans],index+29-ans);
+		for(int i=0;i<index+29-ans;++i){
+			printf("%02x",address[i]);
+		}
+
+		index+=32;
+		ans=index;
+		printf("\n\nerc value:\n\n");
+		while(txn[ans]==(uint8_t)0 && ans<index+32)++ans;
+		memcpy(&address,&txn[ans],index+29-ans);
+		for(int i=0;i<index+29-ans;++i){
+			printf("%02x",address[i]);
+		}
+		
+		
+	}
+	else{
+		printf("\n\neth value %d",value);
+	} 
 }
-void byte_array_to_unsigned_txn(uint8_t* btc_unsigned_txn_byte_array, unsigned_txn* unsigned_txn_ptr)
-{
-
-    uint32_t offset = 0U, len = 0U;
-
-    len = sizeof(unsigned_txn_ptr->network_version);
-    memcpy(unsigned_txn_ptr->network_version, (btc_unsigned_txn_byte_array + offset), len);
-    offset += len;
-
-    len = sizeof(unsigned_txn_ptr->input_count);
-    memcpy(unsigned_txn_ptr->input_count, (btc_unsigned_txn_byte_array + offset), len);
-    offset += len;
-
-    len = (*unsigned_txn_ptr->input_count) * sizeof(unsigned_txn_input);
-    unsigned_txn_ptr->input = (unsigned_txn_input*)malloc(len);
-
-    uint8_t inputIndex = 0U;
-    for (; inputIndex < *unsigned_txn_ptr->input_count; inputIndex++) {
-        len = sizeof(unsigned_txn_ptr->input[inputIndex].previous_txn_hash);
-        memcpy(unsigned_txn_ptr->input[inputIndex].previous_txn_hash, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-
-        len = sizeof(unsigned_txn_ptr->input[inputIndex].previous_output_index);
-        memcpy(unsigned_txn_ptr->input[inputIndex].previous_output_index, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-
-        len = sizeof(unsigned_txn_ptr->input[inputIndex].script_length);
-        memcpy(unsigned_txn_ptr->input[inputIndex].script_length, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-
-        len = sizeof(unsigned_txn_ptr->input[inputIndex].script_public_key);
-        memcpy(unsigned_txn_ptr->input[inputIndex].script_public_key, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-
-        len = sizeof(unsigned_txn_ptr->input[inputIndex].sequence);
-        memcpy(unsigned_txn_ptr->input[inputIndex].sequence, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-    }
-
-    len = sizeof(unsigned_txn_ptr->output_count);
-    memcpy(unsigned_txn_ptr->output_count, (btc_unsigned_txn_byte_array + offset), len);
-    offset += len;
-
-    len = (*unsigned_txn_ptr->output_count) * sizeof(txn_output);
-    unsigned_txn_ptr->output = (txn_output*)malloc(len);
-
-    uint8_t outputIndex = 0U;
-    for (; outputIndex < *unsigned_txn_ptr->output_count; outputIndex++) {
-        len = sizeof(unsigned_txn_ptr->output[outputIndex].value);
-        memcpy(unsigned_txn_ptr->output[outputIndex].value, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-
-        len = sizeof(unsigned_txn_ptr->output[outputIndex].script_length);
-        memcpy(unsigned_txn_ptr->output[outputIndex].script_length, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-
-        len = sizeof(unsigned_txn_ptr->output[outputIndex].script_public_key);
-        memcpy(unsigned_txn_ptr->output[outputIndex].script_public_key, (btc_unsigned_txn_byte_array + offset), len);
-        offset += len;
-    }
-
-    len = sizeof(unsigned_txn_ptr->locktime);
-    memcpy(unsigned_txn_ptr->locktime, (btc_unsigned_txn_byte_array + offset), len);
-    offset += len;
-
-    len = sizeof(unsigned_txn_ptr->sighash);
-    memcpy(unsigned_txn_ptr->sighash, (btc_unsigned_txn_byte_array + offset), len);
-    offset += len;
-}
-
+	
+	
+	
+	
+		
+	
+	
+	
 	
 int main(void) 
 {
 	
-	uint8_t *byte=fromhex("0200000002af1f84ac5a0d83b106c8be402ec4d994ce59277ff57418e4cf385d3cd1f90264000000001976a91463047aebd3da248f2e7b63e0864d3c2f07922fd788acffffffff4a308a7c0d58d744cf707fb4ab873fffaa7de6b9b00a9605696371730fd14044010000001976a91463047aebd3da248f2e7b63e0864d3c2f07922fd788acffffffff0140420f00000000001976a9146e26f46c5820e99bf22b79ba26a81810dbc5f37588ac00000000");
-	const char *mnemonic="library movie around trust valve key time resemble step because absent cement purity transfer arctic assault never canvas awake leave exchange alert flee onion";
-	
-	 char *metadata="8000002c80000001800000000200000000000000000000000000000000000000000000000000010000000100000000";
-	unsigned_txn utx;
-	signed_txn sign_txn;
+	uint8_t *txn=fromhex("f86906850c92a69c0082520894eef5e2d8255e973d587217f9509b416b41ca587080b844a9059cbb0000000000000000000000006523ab57d3d1daced28dda50e2c9a5855388df8200000000000000000000000000000000000000000000d3c21bcecceda1000000038080x");
+	eth_code(txn);
+	uint8_t hash[32];
 	const ecdsa_curve *curve=&secp256k1;
-	byte_array_to_unsigned_txn(byte,&utx);
+	const char *mnemonic="garment opinion monitor gold never catalog  pond sunset spell penalty wrist favorite dinner powder meat sugar company west forest witness kind copper grief gasp";
 	
+	keccak_256(txn,strlen(txn),&hash);
 	char *passphase ="";
 	HDNode master;
 	uint8_t bip39seed[512/8],publickey[32];
@@ -244,98 +259,38 @@ int main(void)
 	
 	//m
 	hdnode_from_seed(bip39seed,64,SECP256K1_NAME,&master);
-	hdnode_fill_public_key(&master);
 	
 	//m/44'
 	hdnode_private_ckd_prime(&master,44);
-	hdnode_fill_public_key(&master);
 	
-	//m/44'/1'
-	hdnode_private_ckd_prime(&master,1);
-	hdnode_fill_public_key(&master);
+	//m/44'/60'
+	hdnode_private_ckd_prime(&master,60);
+	
 	
 	//m/44'/1'/0'
 	hdnode_private_ckd_prime(&master,0);
-	hdnode_fill_public_key(&master);
 
 	//m/44'/1'/0'/0
 	hdnode_private_ckd(&master,0);
+	
+	//m/44'/1'/0'/0/0
+	hdnode_private_ckd(&master,0);
 	hdnode_fill_public_key(&master);
 	
-	int y=(int)utx.input_count[0],z=(int)utx.output_count[0],metaindex=34;
-  	uint8_t ubyte[14+41*y+34*z+25],hash[SHA256_DIGEST_LENGTH],dhash[SHA256_DIGEST_LENGTH];
-  	uint8_t scriptpb[(int)y][25];
-  	
-  	for(int i=0;i<(int)y;++i){
-  		memcpy(&scriptpb[i],utx.input[i].script_public_key,25);
-	}
-
-	memcpy(&sign_txn.network_version,utx.network_version,4);
-	memcpy(&sign_txn.input_count,utx.input_count,1);
-
-	uint32_t  len = 0U;
-    len = (y) * (sizeof(signed_txn_input));
-    sign_txn.input = (signed_txn_input*)malloc(len);
-
-	for(int i=0;i<(int)y;i++){
-		memcpy(&sign_txn.input[i].previous_txn_hash,utx.input[i].previous_txn_hash,32);
-		memcpy(&sign_txn.input[i].previous_output_index,utx.input[i].previous_output_index,4);
-		sign_txn.input[0].previous_txn_hash[0]=utx.input[0].previous_txn_hash[0];
-		memcpy(&sign_txn.input[i].sequence,utx.input[i].sequence,4);
-	}
-	memcpy(&sign_txn.output_count,utx.output_count,1);
-	len = (z) * (sizeof(txn_output));
-    sign_txn.output = (txn_output*)malloc(len);
-	for(int i=0;i<(int)z;i++){
-		memcpy(&sign_txn.output[i].value,utx.output[i].value,8);
-		memcpy(&sign_txn.output[i].script_length,utx.output[i].script_length,1);
-		memcpy(&sign_txn.output[i].script_length,utx.output[i].script_public_key,25);
-	}
-	memcpy(&sign_txn.locktime,utx.locktime,4);
+		
+	uint8_t sig[64];
+	ecdsa_sign_digest(curve,master.private_key,hash,sig,0,0);
 	
-	for(int i=0;i<y;++i){
-		unsigned_txn_to_byte_array(utx,i,ubyte);
+	
+	int p=(int)sig[63];
+	int chainId=3;
+	uint8_t v=(uint8_t)(2 * chainId + 35);
+	if(p%2==1)++v;
+	
+	
+	
+	
 		
-		sha256_Raw(&ubyte,sizeof(ubyte),hash);	
-		sha256_Raw(&hash,sizeof(hash),dhash);
-		
-		char hexa[8];
-		for(int j=0;j<8;++j,metaindex++)hexa[j]=metadata[metaindex];
-		metaindex+=8;
-		int num=(int)strtol(hexa,NULL,16);
-		
-		HDNode add=master;
-		hdnode_private_ckd(&add,num);
-		hdnode_fill_public_key(&add);
-
-		uint8_t sig[64],der[72];
-		int x=ecdsa_sign_digest(curve,add.private_key,dhash,sig,0,0);
-		x=ecdsa_sig_to_der(sig,&der);
-		
-		sign_txn.input[i].script_length[0]=(uint8_t)x+36;
-		sign_txn.input[i].script_sig[0]=(uint8_t)x+1;
-		sign_txn.input[i].script_sig[x+1]=(uint8_t)1;
-		sign_txn.input[i].script_sig[x+2]=(uint8_t)33;
-		memcpy(&sign_txn.input[i].script_sig[1],der,x);
-		memcpy(&sign_txn.input[i].script_sig[x+3],add.public_key,33);
-
-		printf("\n\ninput ->%d\n",i);
-		printf("\npublic key-->");
-		for(int j=0;j<33;++j){printf("%02X",add.public_key[j]);}
-		printf("\n");
-		printf("\n");
-		printf("private key-->");
-		for(int j=0;j<33;++j){printf("%02X",add.private_key[j]);}
-		printf("\n");
-		printf("\n");
-		printf("script_sig-->");
-		for(int j=0;j<x+35;j++){
-			printf("%02X",sign_txn.input[i].script_sig[j]);
-		}
-		
-		
-	}
-	return 0;
 	
 	
 	
